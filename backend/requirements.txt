@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+websockets
+numpy
+scipy
+sqlalchemy
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

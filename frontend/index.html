@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoboKinematics SaaS Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div class="top-nav">
+        <div class="logo">RoboKinematics Pro</div>
+        <div id="nav-unauth">
+            <button class="nav-btn primary" onclick="openModal('auth-modal')">Login / Sign Up</button>
+        </div>
+        <div id="nav-auth" class="hidden">
+            <span class="user-greeting">Welcome, <span id="nav-username">User</span></span>
+            <button class="nav-btn primary" onclick="openModal('save-modal')">Save Config</button>
+            <button class="nav-btn" onclick="loadConfigs()">My Configs</button>
+            <button class="nav-btn danger" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- 3D Visualization Area -->
+        <div id="canvas-container">
+            <div id="loading-overlay">Connecting to Kinematics Engine...</div>
+            <div id="scene-tools">
+                <button id="btn-add-obs">+ Spawn Obstacle</button>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div id="control-panel">
+            <div class="panel-header" style="display:none;">
+                <!-- Header moved to Top Nav -->
+            </div>
+
+            <!-- TABS -->
+            <div class="tabs-header">
+                <button class="tab-btn active" data-target="tab-config">Config</button>
+                <button class="tab-btn" data-target="tab-manual">Manual / IK</button>
+                <button class="tab-btn" data-target="tab-path">Path Math</button>
+            </div>
+
+            <!-- TAB: Config -->
+            <div id="tab-config" class="tab-content active">
+                <div class="panel-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2>Arm Configuration</h2>
+                        <div class="status-indicator">
+                            <span id="backend-status" class="status-dot disconnected"></span>
+                            <span id="backend-status-text">Disconnected</span>
+                        </div>
+                    </div>
+                    <div class="control-group row">
+                        <label for="dof-select">Degrees of Freedom</label>
+                        <select id="dof-select">
+                            <option value="2">2 DOF</option>
+                            <option value="3" selected>3 DOF</option>
+                            <option value="4">4 DOF</option>
+                            <option value="5">5 DOF</option>
+                            <option value="6">6 DOF</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="panel-section scrollable" id="links-container">
+                    <h2>Link Lengths (a/d parameter)</h2>
+                    <div id="inputs-wrapper">
+                        <!-- Inputs injected by JS -->
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>Engineering Toolkit</h2>
+                    <div style="display:flex; flex-direction:column; gap:8px; font-size:0.85rem;">
+                        <label><input type="checkbox" id="chk-axes" checked> Render Joint Axis Helpers</label>
+                        <label><input type="checkbox" id="chk-ghost"> Render Ghost Target Arm</label>
+                        <button id="btn-export-csv" class="nav-btn primary" style="width:100%; margin:0; margin-top:0.5rem">Export DH Params (CSV)</button>
+                        <button id="btn-gen-workspace" class="nav-btn" style="width:100%; margin:0;">Generate Reachable Workspace Cloud</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Manual / IK -->
+            <div id="tab-manual" class="tab-content">
+                <div class="panel-section">
+                    <h2>Operation Mode</h2>
+                    <div class="mode-toggle">
+                        <button id="btn-fk" class="active">Forward (FK)</button>
+                        <button id="btn-ik">Inverse (IK)</button>
+                    </div>
+                </div>
+
+                <div class="panel-section scrollable" id="joints-container">
+                    <h2>Joint Controls & Limits</h2>
+                    <p class="helper-text" style="margin-bottom: 0.5rem;">Click the padlock to geometrically fix a joint.</p>
+                    <div id="sliders-wrapper">
+                        <!-- Sliders injected by JS -->
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>End Effector</h2>
+                    <div class="status-grid">
+                        <div class="status-item"><span>X:</span> <span id="eff-x">0.00</span></div>
+                        <div class="status-item"><span>Y:</span> <span id="eff-y">0.00</span></div>
+                        <div class="status-item"><span>Z:</span> <span id="eff-z">0.00</span></div>
+                    </div>
+                    
+                    <div class="status-grid mt-2">
+                        <div class="status-item"><span style="color:#f59e0b">Roll (X):</span> <span id="eff-roll">0.00°</span></div>
+                        <div class="status-item"><span style="color:#f59e0b">Pitch (Y):</span> <span id="eff-pitch">0.00°</span></div>
+                        <div class="status-item"><span style="color:#f59e0b">Yaw (Z):</span> <span id="eff-yaw">0.00°</span></div>
+                    </div>
+                    
+                    <div id="ik-target-display" class="hidden mt-2">
+                        <h3>Target Coordinates (IK Override)</h3>
+                        <div class="status-grid text-accent fields-grid">
+                            <div class="status-item"><span>X:</span> <input type="number" id="ik-in-x" value="0.00" step="0.5"></div>
+                            <div class="status-item"><span>Y:</span> <input type="number" id="ik-in-y" value="0.00" step="0.5"></div>
+                            <div class="status-item"><span>Z:</span> <input type="number" id="ik-in-z" value="0.00" step="0.5"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Path Math Builder -->
+            <div id="tab-path" class="tab-content">
+                <div class="panel-section">
+                    <h2>Parametric Trajectory</h2>
+                    <p class="helper-text">Define continuous X, Y, Z target patterns as JavaScript equations of time <code>t</code>. The engine constantly evaluates IK.</p>
+                    
+                    <div class="math-builder-keys">
+                        <button class="math-key">Math.sin(</button>
+                        <button class="math-key">Math.cos(</button>
+                        <button class="math-key">Math.PI</button>
+                        <button class="math-key">t</button>
+                    </div>
+
+                    <div class="equation-inputs">
+                        <div class="eq-row">
+                            <label>X(t) =</label>
+                            <input type="text" id="eq-x" value="4 * Math.cos(t)">
+                        </div>
+                        <div class="eq-row">
+                            <label>Y(t) =</label>
+                            <input type="text" id="eq-y" value="4 * Math.sin(t)">
+                        </div>
+                        <div class="eq-row">
+                            <label>Z(t) =</label>
+                            <input type="text" id="eq-z" value="4 + Math.sin(t * 2)">
+                        </div>
+                    </div>
+                    
+                    <div id="eq-error" class="error-box hidden">Invalid function syntax.</div>
+                    
+                    <button id="btn-run-trajectory" class="run-btn mt-2">Run Trajectory Generation</button>
+                    
+                    <div style="margin-top:2rem; border-top:1px solid rgba(255,255,255,0.1); padding-top:1rem;">
+                        <h3 style="color:var(--accent); margin-bottom:0.5rem;">Interactive Demo</h3>
+                        <p class="helper-text" style="font-size:0.8rem; margin-bottom:1rem;">Spawns an interactive factory setting. A ball is placed at (0, 4, 0) and a drop-box at (0, -4, 0). The engine will inject perfect harmonic arc equations to perform a cyclic Pick-and-Place routine.</p>
+                        <button id="btn-demo-pick" class="nav-btn primary w-full" style="margin:0;">Spawn Pick & Place Demo Environment</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section eq-container">
+                <h2>Kinematics Simulator Equations</h2>
+                <div style="font-family: 'Inter', sans-serif; font-size: 0.85em; line-height: 1.4; color: var(--text-secondary);">
+                    <p><strong>FK Form:</strong> T<sub>0</sub><sup>N</sup> = A<sub>1</sub> · ... · A<sub>N</sub></p>
+                    <p style="margin-top:0.4rem;"><strong>IK Form:</strong> min ||FK(θ) - P<sub>targ</sub>||<sup>2</sup></p>
+                    <p style="margin-top:0.4rem; font-size: 0.8em;"><strong>DH Matrix Base:</strong><br>
+                    RotZ(θ) · TransZ(d) · TransX(a) · RotX(α)</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="auth-modal" class="modal hidden">
+        <div class="modal-content auth-box">
+            <span class="close-btn" onclick="closeModal('auth-modal')">&times;</span>
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login-btn" onclick="switchAuthTab('login')">Login</button>
+                <button class="auth-tab" id="tab-register-btn" onclick="switchAuthTab('register')">Sign Up</button>
+            </div>
+            <div class="control-group glossy-input">
+                <input type="text" id="auth-user" placeholder="Username" autocomplete="off">
+            </div>
+            <div class="control-group glossy-input mt-2">
+                <input type="password" id="auth-pass" placeholder="Password">
+            </div>
+            <button id="btn-submit-auth" class="nav-btn primary w-full mt-2" style="padding:0.8rem; font-size:1rem;" onclick="submitLogin()">Secure Login</button>
+        </div>
+    </div>
+
+    <div id="save-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('save-modal')">&times;</span>
+            <h2>Save Configuration</h2>
+            <p class="helper-text">Save your current Degrees of Freedom, DH parameters, and locked joints to your cloud profile.</p>
+            <div class="control-group">
+                <label>Configuration Title</label>
+                <input type="text" id="save-title" placeholder="e.g. 5-DOF Custom Arm">
+            </div>
+            <button class="run-btn" onclick="submitSaveConfig()">Save Configuration</button>
+        </div>
+    </div>
+
+    <div id="load-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('load-modal')">&times;</span>
+            <h2>My Saved Configurations</h2>
+            <div id="config-list-container" class="scrollable" style="max-height: 250px; margin-top: 1rem;">
+                <!-- Lists injected via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toasts -->
+    <div id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="/static/three_scene.js"></script>
+    <script src="/static/main.js"></script>
+</body>
+</html>
